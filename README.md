@@ -1,3 +1,4 @@
+<img width="1600" height="1408" alt="image" src="https://github.com/user-attachments/assets/6b24807b-a541-4ecf-8049-ed2e00e03d3a" />
 🚀 Smart-Person-Detection-PLC: Sistema de Detecção e Telemetria de Pessoas com Integração Siemens S7-1500
 🎯 Visão Geral do Projeto
 Este projeto implementa um sistema de monitoramento computacional visionário em tempo real, focado na detecção de indivíduos e na extração de dados telemétricos (distância, velocidade). Ele estabelece uma interface de comunicação direta com Controladores Lógicos Programáveis (CLPs) Siemens S7-1500, utilizando a biblioteca Snap7, para a integração em ambientes de automação industrial e sistemas de segurança que demandam dados de presença humana precisos e acionáveis.
