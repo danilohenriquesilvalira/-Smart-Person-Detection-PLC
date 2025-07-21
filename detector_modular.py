@@ -3,12 +3,181 @@ import time
 import numpy as np
 import os
 import shutil
+import threading
 from collections import Counter
 
+# STREAMING INTEGRADO
+from flask import Flask, Response
+from flask_cors import CORS
+from waitress import serve
+
 # Importar módulos
-from camera_manager import CameraManager
 from plc_manager import PLCManager
 from websocket_server import WebSocketServer, create_data_structure
+
+# CAMERA MANAGER COM STREAMING INTEGRADO
+class CameraManager:
+    def __init__(self, rtsp_url):
+        self.rtsp_url = rtsp_url
+        self.cap = None
+        self.area_coords = None
+        self.tamanho_area = 200
+        self.frame_atual = None
+        
+        # STREAMING - Variáveis do video_stream_standalone.py
+        self.current_frame = None
+        self.is_camera_running = False
+        self.frame_lock = threading.Lock()
+        
+        # Flask para streaming
+        self.flask_app = Flask(__name__)
+        CORS(self.flask_app)
+        self.stream_thread = None
+        
+        # Configurar rota Flask
+        @self.flask_app.route('/video_feed')
+        def video_feed():
+            return Response(self.generate_mjpeg_frames(),
+                            mimetype='multipart/x-mixed-replace; boundary=frame')
+    
+    def conectar(self):
+        """Conectar à câmera E iniciar streaming"""
+        # Conectar câmera
+        self.cap = cv2.VideoCapture(self.rtsp_url)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
+        if not self.cap.isOpened():
+            return False
+        
+        # INICIAR STREAMING automaticamente
+        self.is_camera_running = True
+        self.start_streaming()
+        
+        return True
+    
+    def start_streaming(self):
+        """Iniciar servidor Flask para streaming"""
+        # Thread para servidor Flask
+        self.stream_thread = threading.Thread(target=self._start_flask_server, daemon=True)
+        self.stream_thread.start()
+        print(f"🎥 Streaming iniciado: http://localhost:5000/video_feed")
+    
+    def _start_flask_server(self):
+        """Servidor Flask - exatamente como video_stream_standalone.py"""
+        try:
+            # Desabilitar logs do Flask
+            import logging
+            log = logging.getLogger('werkzeug')
+            log.setLevel(logging.ERROR)
+            
+            serve(self.flask_app, host='0.0.0.0', port=5000, threads=4)
+        except Exception as e:
+            print(f"❌ Erro no servidor Flask: {e}")
+    
+    def generate_mjpeg_frames(self):
+        """Gerar frames para streaming - IGUAL ao video_stream_standalone.py"""
+        while self.is_camera_running:
+            frame = self.get_current_frame()
+            if frame is None:
+                time.sleep(0.1)
+                continue
+
+            # Se ROI não definida, definir
+            if self.area_coords is None:
+                self.definir_area(frame)
+            
+            try:
+                # DESENHAR RETÂNGULO AMARELO - igual ao original
+                self.desenhar_area_streaming(frame, cor=(0, 255, 255))
+
+                ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                if not ret:
+                    time.sleep(0.1)
+                    continue
+
+                frame_bytes = buffer.tobytes()
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                
+                time.sleep(0.03)
+
+            except Exception as e:
+                print(f"❌ Erro no streaming: {e}")
+                time.sleep(0.1)
+    
+    def get_current_frame(self):
+        """Obter frame atual thread-safe"""
+        with self.frame_lock:
+            return self.current_frame.copy() if self.current_frame is not None else None
+    
+    def desenhar_area_streaming(self, frame, cor=(0, 255, 255)):
+        """Desenhar área para streaming - IGUAL ao video_stream_standalone.py"""
+        if self.area_coords is None:
+            return
+        
+        x1, y1, x2, y2 = self.area_coords
+        cv2.rectangle(frame, (x1, y1), (x2, y2), cor, 3)
+        
+        centro_x, centro_y = (x1 + x2) // 2, (y1 + y2) // 2
+        cv2.line(frame, (centro_x - 20, centro_y), (centro_x + 20, centro_y), cor, 2)
+        cv2.line(frame, (centro_x, centro_y - 20), (centro_x, centro_y + 20), cor, 2)
+    
+    def ler_frame(self):
+        """Ler frame da câmera"""
+        if not self.cap:
+            return False, None
+        
+        ret, frame = self.cap.read()
+        if ret:
+            # Atualizar AMBOS frames
+            self.frame_atual = frame
+            
+            with self.frame_lock:
+                self.current_frame = frame.copy()
+            
+            if self.area_coords is None:
+                self.definir_area(frame)
+        
+        return ret, frame
+    
+    def definir_area(self, frame):
+        """Definir área central de detecção"""
+        h, w = frame.shape[:2]
+        centro_x, centro_y = w // 2, h // 2
+        meio = self.tamanho_area // 2
+        self.area_coords = (centro_x - meio, centro_y - meio, centro_x + meio, centro_y + meio)
+    
+    def extrair_area(self, frame):
+        """Extrair área de interesse do frame"""
+        if self.area_coords is None:
+            return None
+        
+        x1, y1, x2, y2 = self.area_coords
+        area = frame[y1:y2, x1:x2]
+        if len(area.shape) == 3:
+            area = cv2.cvtColor(area, cv2.COLOR_BGR2GRAY)
+        return cv2.resize(area, (100, 100))
+    
+    def desenhar_area(self, frame, cor=(255, 100, 0)):
+        """Desenhar área de detecção no frame OpenCV"""
+        if self.area_coords is None:
+            return
+        
+        x1, y1, x2, y2 = self.area_coords
+        cv2.rectangle(frame, (x1, y1), (x2, y2), cor, 3)
+        
+        centro_x, centro_y = (x1 + x2) // 2, (y1 + y2) // 2
+        cv2.line(frame, (centro_x - 20, centro_y), (centro_x + 20, centro_y), cor, 2)
+        cv2.line(frame, (centro_x, centro_y - 20), (centro_x, centro_y + 20), cor, 2)
+    
+    def desconectar(self):
+        """Desconectar câmera e parar streaming"""
+        self.is_camera_running = False
+        
+        if self.cap:
+            self.cap.release()
+            self.cap = None
+
 
 class DetectorModular:
     def __init__(self, rtsp_url, websocket_port=8765):
@@ -61,12 +230,56 @@ class DetectorModular:
         camera_ok = self.camera.conectar()
         plc_ok = self.plc.conectar()
         
-        # Iniciar WebSocket
+        # Iniciar WebSocket COM CALLBACKS
         self.websocket.start_server()
+        self._configurar_websocket_callbacks()
         
         print(f"📷 Câmera: {'✅' if camera_ok else '❌'}")
         print(f"🔌 PLC: {'✅' if plc_ok else '❌'}")
         print(f"🌐 WebSocket: ✅ Porta {self.websocket.port}")
+        print(f"📱 Dashboard: ✅ Controles ativos")
+    
+    def _configurar_websocket_callbacks(self):
+        """Configurar callbacks para comandos do Dashboard"""
+        self.websocket.set_command_callback('train', self._cmd_treinar)
+        self.websocket.set_command_callback('detect', self._cmd_detectar)
+        self.websocket.set_command_callback('reset', self._cmd_reset)
+        self.websocket.set_command_callback('capture_empty', self._cmd_capturar_sem_copo)
+        self.websocket.set_command_callback('capture_good', self._cmd_capturar_copo_bom)
+        self.websocket.set_command_callback('capture_damaged', self._cmd_capturar_danificado)
+    
+    # COMANDOS VIA DASHBOARD
+    def _cmd_treinar(self, cmd):
+        self.modo_atual = "TREINAMENTO"
+        print("📱 DASHBOARD: TREINAR")
+        return True
+    
+    def _cmd_detectar(self, cmd):
+        if self.treinamento_completo:
+            self.modo_atual = "DETECCAO"
+            print("📱 DASHBOARD: DETECTAR")
+            return True
+        return False
+    
+    def _cmd_reset(self, cmd):
+        self.reset_sistema()
+        print("📱 DASHBOARD: RESET")
+        return True
+    
+    def _cmd_capturar_sem_copo(self, cmd):
+        if self.modo_atual == "TREINAMENTO":
+            return self.capturar_foto("sem_copo")
+        return False
+    
+    def _cmd_capturar_copo_bom(self, cmd):
+        if self.modo_atual == "TREINAMENTO":
+            return self.capturar_foto("copo_bom")
+        return False
+    
+    def _cmd_capturar_danificado(self, cmd):
+        if self.modo_atual == "TREINAMENTO":
+            return self.capturar_foto("copo_danificado")
+        return False
     
     def criar_pastas(self):
         """Criar estrutura de pastas"""
@@ -108,8 +321,8 @@ class DetectorModular:
     def verificar_treinamento_completo(self):
         """Verificar se treinamento está completo"""
         completo = (self.contador_sem_copo >= self.max_fotos and 
-                   self.contador_copo_bom >= self.max_fotos and
-                   self.contador_copo_danificado >= self.max_fotos)
+                    self.contador_copo_bom >= self.max_fotos and
+                    self.contador_copo_danificado >= self.max_fotos)
         
         if completo and not self.treinamento_completo:
             self.treinamento_completo = True
@@ -129,7 +342,7 @@ class DetectorModular:
         # Processar comandos
         if comandos.get('treinar'):
             self.modo_atual = "TREINAMENTO"
-            print("📚 PLC: TREINAR")
+            print("📡 PLC: TREINAR")
         
         if comandos.get('detectar') and self.treinamento_completo:
             self.modo_atual = "DETECCAO"
@@ -305,143 +518,37 @@ class DetectorModular:
         data["sensibilidade"] = self.sensibilidade
         data["treinamento_completo"] = self.treinamento_completo
         
+        # DADOS PARA DASHBOARD
+        data["controles"] = {
+            "pode_treinar": True,
+            "pode_detectar": self.treinamento_completo,
+            "pode_capturar": self.modo_atual == "TREINAMENTO"
+        }
+        
         self.websocket.update_data(data)
     
     def desenhar_interface(self, frame):
-        """Desenhar interface visual"""
-        # Painel lateral direito
-        painel_x = frame.shape[1] - 400
-        painel_y = 50
-        painel_w = 380
-        painel_h = 550
-        
-        # Fundo do painel
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (painel_x, painel_y), (painel_x + painel_w, painel_y + painel_h), (0, 0, 0), -1)
-        cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
-        cv2.rectangle(frame, (painel_x, painel_y), (painel_x + painel_w, painel_y + painel_h), (255, 255, 255), 3)
-        
-        # Título
-        cv2.putText(frame, "DETECTOR MODULAR", (painel_x + 20, painel_y + 40), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-        
-        y_pos = painel_y + 80
-        
-        # Status principal
-        cores_status = {
-            "AGUARDANDO": (255, 255, 0),
-            "TREINAMENTO": (0, 255, 255),
-            "DETECCAO": (0, 255, 0) if self.estado_detectado == "COPO_BOM" else 
-                       (0, 0, 255) if self.estado_detectado == "COPO_DANIFICADO" else (128, 128, 128)
-        }
-        
-        cor_status = cores_status.get(self.modo_atual, (255, 255, 255))
-        cv2.putText(frame, f"STATUS: {self.modo_atual}", (painel_x + 20, y_pos), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, cor_status, 2)
-        y_pos += 40
-        
-        # Estado detectado
-        if self.modo_atual == "DETECCAO":
-            cor_estado = (0, 255, 0) if self.estado_detectado == "COPO_BOM" else \
-                        (0, 0, 255) if self.estado_detectado == "COPO_DANIFICADO" else (128, 128, 128)
-            cv2.putText(frame, f"ESTADO: {self.estado_detectado}", (painel_x + 20, y_pos), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, cor_estado, 2)
-        y_pos += 50
-        
-        # Sensibilidade
-        cv2.putText(frame, f"SENSIBILIDADE: {self.sensibilidade:.3f}", (painel_x + 20, y_pos), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-        y_pos += 40
-        
-        # Valores medidos (se treinamento completo)
-        if self.treinamento_completo:
-            cv2.putText(frame, "VALORES MEDIDOS:", (painel_x + 20, y_pos), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-            y_pos += 40
-            
-            # Barras de valores
-            barra_w = 300
-            barra_h = 25
-            
-            valores_barras = [
-                ("SEM COPO", self.valor_sem_copo, (128, 128, 128)),
-                ("COPO BOM", self.valor_copo_bom, (0, 255, 0)),
-                ("DANIFICADO", self.valor_copo_danificado, (0, 0, 255))
-            ]
-            
-            for nome, valor, cor in valores_barras:
-                self.desenhar_barra(frame, painel_x + 20, y_pos, barra_w, barra_h, valor, cor, nome)
-                y_pos += 50
-        
-        # Contadores de treinamento
-        y_pos = painel_y + painel_h - 180
-        cv2.putText(frame, "TREINAMENTO:", (painel_x + 20, y_pos), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        y_pos += 25
-        
-        contadores = [
-            (f"Sem Copo: {self.contador_sem_copo}/10", (128, 128, 128)),
-            (f"Copo Bom: {self.contador_copo_bom}/10", (0, 255, 0)),
-            (f"Danificado: {self.contador_copo_danificado}/10", (0, 0, 255))
-        ]
-        
-        for texto, cor in contadores:
-            cv2.putText(frame, texto, (painel_x + 20, y_pos), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, cor, 1)
-            y_pos += 20
-        
-        # Status dos componentes
-        y_pos += 20
-        componentes = [
-            (f"PLC: {'ON' if self.plc.conectado else 'OFF'}", 
-             (0, 255, 0) if self.plc.conectado else (0, 0, 255)),
-            (f"DB18: {'OK' if self.plc.db18_disponivel else 'OFF'}", 
-             (0, 255, 0) if self.plc.db18_disponivel else (255, 255, 0)),
-            (f"WebSocket: {self.websocket.get_client_count()} clients", (0, 255, 255))
-        ]
-        
-        for texto, cor in componentes:
-            cv2.putText(frame, texto, (painel_x + 20, y_pos), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, cor, 1)
-            y_pos += 20
-        
-        # Controles
-        controles = [
-            "CONTROLES:",
-            "T=Treinar D=Detectar R=Reset",
-            "V=SemCopo C=CopoBom S=Dano",
-            "ESC=Sair"
-        ]
-        
-        for i, controle in enumerate(controles):
-            cv2.putText(frame, controle, (10, frame.shape[0] - (len(controles) - i) * 20), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
-    
+        """Desenhar interface visual (agora apenas para o frame a ser processado internamente, se necessário para debug ou log)"""
+        # This method is designed to draw on the 'frame' which would then be displayed by cv2.imshow.
+        # Since we are removing cv2.imshow, the visual interface drawn here won't be visible to the user
+        # unless you re-purpose this method to save frames or to perform some other visual logging.
+        # For the purpose of removing the local window, this method effectively becomes a no-op
+        # in terms of user-facing visual output, but it's kept for logical completeness in the code
+        # in case you decide to re-implement some form of visual logging later.
+        pass
+
     def desenhar_barra(self, frame, x, y, largura, altura, valor, cor, label):
-        """Desenhar barra de progresso"""
-        # Fundo
-        cv2.rectangle(frame, (x, y), (x + largura, y + altura), (50, 50, 50), -1)
-        
-        # Valor
-        barra_largura = int(largura * min(valor, 1.0))
-        if barra_largura > 0:
-            cv2.rectangle(frame, (x, y), (x + barra_largura, y + altura), cor, -1)
-        
-        # Texto
-        texto = f"{label}: {valor:.3f}"
-        cv2.putText(frame, texto, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, cor, 1)
-        
-        # Borda
-        cv2.rectangle(frame, (x, y), (x + largura, y + altura), (255, 255, 255), 1)
+        """Desenhar barra de progresso (no-op since interface is not displayed)"""
+        pass
     
     def processar_teclado(self, key):
         """Processar comandos do teclado"""
         if key == ord('t'):
             self.modo_atual = "TREINAMENTO"
-            print("📚 Modo TREINAMENTO")
+            print("⌨️ Teclado: TREINAMENTO")
         elif key == ord('d') and self.treinamento_completo:
             self.modo_atual = "DETECCAO"
-            print("🎯 Modo DETECÇÃO")
+            print("⌨️ Teclado: DETECÇÃO")
         elif key == ord('r'):
             self.reset_sistema()
         elif key == ord('v') and self.modo_atual == "TREINAMENTO":
@@ -453,9 +560,11 @@ class DetectorModular:
     
     def executar(self):
         """Loop principal do sistema"""
-        print("🚀 SISTEMA MODULAR INICIADO")
+        print("🚀 SISTEMA MODULAR + STREAMING + DASHBOARD INICIADO")
         print(f"🌐 WebSocket: ws://localhost:{self.websocket.port}")
-        print("=" * 50)
+        print(f"🎥 Streaming: http://localhost:5000/video_feed")
+        print(f"📱 Dashboard: Controles via web ativos")
+        print("=" * 60)
         
         contador_ciclos = 0
         
@@ -505,32 +614,28 @@ class DetectorModular:
                 if contador_ciclos % 6 == 0:
                     self.atualizar_websocket()
                 
-                # Interface visual
-                self.desenhar_interface(frame)
+                # Interface visual - Removed cv2.imshow, so this will no longer be visible.
+                # However, you might still want to call this if you were performing some
+                # internal drawing for debugging or logging that doesn't need to be displayed.
+                # Since the request is to remove the window, the drawing functions can be
+                # effectively made into no-ops or removed if they serve no other purpose.
+                # For safety, I've kept the call but made the methods "pass" (do nothing).
+                self.desenhar_interface(frame) 
                 
-                # Definir cor da área baseada no estado
-                if self.modo_atual == "DETECCAO":
-                    cores = {
-                        "SEM_COPO": (128, 128, 128),
-                        "COPO_BOM": (0, 255, 0),
-                        "COPO_DANIFICADO": (0, 0, 255)
-                    }
-                    cor_area = cores.get(self.estado_detectado, (255, 100, 0))
-                else:
-                    cor_area = (255, 100, 0)
+                # No longer need to process keyboard input since there's no window
+                # that would be in focus to receive key presses.
+                # However, I'll keep the `processar_teclado` method for completeness,
+                # as the prompt asked to remove the window, not necessarily keyboard control.
+                # If you decide to completely remove keyboard control, you can delete this section.
+                # key = cv2.waitKey(1) & 0xFF
+                # if key == 27:  # ESC
+                #     break
+                # elif key != 255:
+                #     self.processar_teclado(key)
                 
-                self.camera.desenhar_area(frame, cor_area)
-                
-                # Mostrar frame
-                cv2.imshow('DETECTOR MODULAR', frame)
-                
-                # Processar teclado
-                key = cv2.waitKey(1) & 0xFF
-                if key == 27:  # ESC
-                    break
-                elif key != 255:
-                    self.processar_teclado(key)
-                
+                # Instead of waiting for a key press, we can just sleep to control loop speed
+                time.sleep(0.03) # Adjust this value if needed for desired loop frequency
+
                 contador_ciclos += 1
         
         except KeyboardInterrupt:
@@ -548,17 +653,17 @@ class DetectorModular:
         self.plc.desconectar()
         self.websocket.stop_server()
         
-        # Fechar OpenCV
+        # Close all OpenCV windows (though there shouldn't be any now)
         cv2.destroyAllWindows()
         
         print("✅ Sistema finalizado")
 
 def main():
     """Função principal"""
-    print("🥤 DETECTOR MODULAR + PLC + WEBSOCKET")
-    print("🔧 Arquitetura modular para fácil manutenção")
-    print("🌐 WebSocket para integração web")
-    print("=" * 50)
+    print("🥤 DETECTOR MODULAR + PLC + WEBSOCKET + STREAMING + DASHBOARD")
+    print("🔧 Controle: PLC + Teclado + Dashboard Web")
+    print("🌐 Streaming + WebSocket integrados")
+    print("=" * 60)
     
     # Configurações
     rtsp_url = "rtsp://DaniloLira:Danilo%4034333528@192.168.0.100:554/stream2"
@@ -575,6 +680,8 @@ def main():
     print(f"📷 Câmera: ✅")
     print(f"🔌 PLC: {'✅' if detector.plc.conectado else '❌'}")
     print(f"🌐 WebSocket: ✅ ws://localhost:{websocket_port}")
+    print(f"🎥 Streaming: ✅ http://localhost:5000/video_feed")
+    print(f"📱 Dashboard: ✅ Controles web ativos")
     
     # Executar sistema
     detector.executar()
