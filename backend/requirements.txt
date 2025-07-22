@@ -1,0 +1,28 @@
+# 📦 Smart Detection System - Dependencies (Versões Compatíveis)
+
+# 🎥 Computer Vision & Image Processing
+opencv-python==4.8.1.78
+numpy==1.24.3
+
+# 🔌 Industrial Communication (Opcional)
+# snap7==1.3  # Descomente se usar PLC
+
+# 🌐 Web Framework & API
+Flask==2.3.3
+Flask-CORS==4.0.0
+waitress==2.1.2
+
+# 🌐 WebSocket Communication (Versão Compatível)
+websockets==10.4
+
+# 📊 Data Processing
+Pillow==10.0.1
+
+# 🛠️ Utilities
+python-dotenv==1.0.0
+
+# 📝 Optional Development Dependencies
+# pytest==7.4.3
+# pytest-asyncio==0.21.1
+# black==23.9.1
+# flake8==6.1.0

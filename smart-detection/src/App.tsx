@@ -1,5 +1,8 @@
+// 📱 App Component - Smart Detection Dashboard
+
 import React from 'react';
-import Dashboard from './Dashboard';
+import Dashboard from './components/Dashboard/Dashboard';
+import './styles/animations.css';
 
 const App: React.FC = () => {
   return <Dashboard />;
