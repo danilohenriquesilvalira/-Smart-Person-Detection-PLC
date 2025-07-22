@@ -1,4 +1,4 @@
-// 🎣 useWebSocket Hook - Smart Detection Dashboard
+// 🎣 useWebSocket Hook - Smart Detection Dashboard (ATUALIZADO)
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { WebSocketData, UseWebSocketReturn, WebSocketCommand, LogType } from '../types';
@@ -9,8 +9,16 @@ export const useWebSocket = (url: string = 'ws://localhost:8765'): UseWebSocketR
     status: "AGUARDANDO",
     valores: { sem_copo: 0.0, copo_bom: 0.0, copo_danificado: 0.0 },
     contadores: { sem_copo: 0, copo_bom: 0, copo_danificado: 0 },
+    contadores_inteligentes: {
+      sem_copo_count: 0,
+      copo_bom_count: 0,
+      copo_danificado_count: 0,
+      total_detections: 0,
+      last_state: 'SEM_COPO'
+    },
     sensibilidade: 0.1,
     treinamento_completo: false,
+    estado_detectado: 'SEM_COPO',
     plc: { conectado: false, db18_disponivel: false },
     controles: {
       pode_treinar: true,
@@ -96,7 +104,7 @@ export const useWebSocket = (url: string = 'ws://localhost:8765'): UseWebSocketR
         try {
           const rawData: WebSocketData = JSON.parse(event.data);
           
-          // Validação e normalização dos dados
+          // Validação e normalização dos dados (ATUALIZADA)
           const validatedData: WebSocketData = {
             timestamp: rawData.timestamp || Date.now() / 1000,
             status: rawData.status || "AGUARDANDO",
@@ -110,8 +118,17 @@ export const useWebSocket = (url: string = 'ws://localhost:8765'): UseWebSocketR
               copo_bom: rawData.contadores?.copo_bom ?? 0,
               copo_danificado: rawData.contadores?.copo_danificado ?? 0
             },
+            // NOVO: Processar contadores inteligentes
+            contadores_inteligentes: {
+              sem_copo_count: rawData.contadores_inteligentes?.sem_copo_count ?? 0,
+              copo_bom_count: rawData.contadores_inteligentes?.copo_bom_count ?? 0,
+              copo_danificado_count: rawData.contadores_inteligentes?.copo_danificado_count ?? 0,
+              total_detections: rawData.contadores_inteligentes?.total_detections ?? 0,
+              last_state: rawData.contadores_inteligentes?.last_state ?? 'SEM_COPO'
+            },
             sensibilidade: rawData.sensibilidade ?? 0.1,
             treinamento_completo: rawData.treinamento_completo ?? false,
+            estado_detectado: rawData.estado_detectado ?? 'SEM_COPO',
             plc: {
               conectado: rawData.plc?.conectado ?? false,
               db18_disponivel: rawData.plc?.db18_disponivel ?? false

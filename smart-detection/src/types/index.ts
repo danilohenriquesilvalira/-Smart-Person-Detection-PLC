@@ -1,4 +1,4 @@
-// 🔷 Types - Smart Detection Dashboard
+// 🔷 Types - Smart Detection Dashboard (ATUALIZADO)
 
 export interface WebSocketData {
   timestamp: number;
@@ -13,8 +13,17 @@ export interface WebSocketData {
     copo_bom: number;
     copo_danificado: number;
   };
+  // NOVO: Contadores Inteligentes
+  contadores_inteligentes?: {
+    sem_copo_count: number;
+    copo_bom_count: number;
+    copo_danificado_count: number;
+    total_detections: number;
+    last_state: string;
+  };
   sensibilidade: number;
   treinamento_completo: boolean;
+  estado_detectado?: string;
   plc: {
     conectado: boolean;
     db18_disponivel: boolean;

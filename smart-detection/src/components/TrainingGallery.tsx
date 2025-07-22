@@ -1,30 +1,26 @@
-// 🖼️ src/components/TrainingGallery.tsx - Galeria de Imagens
+// 🖼️ src/components/TrainingGallery.tsx - Galeria Simples e Rápida
 
 import React, { useState } from 'react';
-import { Trash2, Eye, Download, RefreshCw } from 'lucide-react';
-import { useTrainingImages } from '../hooks/useTrainingImages'; // Presumo que este hook está fazendo a requisição correta
+import { Trash2, Eye, Download, RefreshCw, X } from 'lucide-react';
+import { useTrainingImages } from '../hooks/useTrainingImages';
 import { Button } from './ui/Button';
 import { StatusCard } from './ui/StatusCard';
 
 export const TrainingGallery: React.FC = () => {
-    // Este hook (useTrainingImages) é crucial. Ele deve estar buscando os dados da API corretamente.
     const { images, stats, loading, error, refresh, deleteImage, clearCategory } = useTrainingImages();
     const [selectedCategory, setSelectedCategory] = useState<string>('all');
-    const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    const [viewImage, setViewImage] = useState<string | null>(null);
 
-    // Filtrar imagens por categoria
     const filteredImages = selectedCategory === 'all' 
         ? images 
         : images.filter(img => img.category === selectedCategory);
 
-    // Agrupar por categoria para os botões de filtro
     const imagesByCategory = images.reduce((acc, img) => {
         if (!acc[img.category]) acc[img.category] = [];
         acc[img.category].push(img);
         return acc;
     }, {} as Record<string, typeof images>);
 
-    // Mapeamento para nomes de exibição (já está correto)
     const getCategoryDisplayName = (category: string) => {
         const names = {
             'sem_copo': 'Sem Copo',
@@ -34,7 +30,6 @@ export const TrainingGallery: React.FC = () => {
         return names[category as keyof typeof names] || category;
     };
 
-    // Mapeamento para cores de exibição (já está correto)
     const getCategoryColor = (category: string) => {
         const colors = {
             'sem_copo': 'bg-gray-100 text-gray-800',
@@ -44,30 +39,25 @@ export const TrainingGallery: React.FC = () => {
         return colors[category as keyof typeof colors] || 'bg-blue-100 text-blue-800';
     };
 
-    const handleDeleteImage = async (category: string, filename: string) => {
-        if (confirm(`Deseja deletar a imagem ${filename}?`)) {
-            const success = await deleteImage(category, filename);
-            if (success) {
-                alert('Imagem deletada com sucesso!');
-            }
+    const handleDelete = async (category: string, filename: string) => {
+        if (confirm(`Deletar ${filename}?`)) {
+            await deleteImage(category, filename);
+            setViewImage(null);
         }
     };
 
-    const handleClearCategory = async (category: string) => {
-        if (confirm(`Deseja limpar todas as imagens da categoria ${getCategoryDisplayName(category)}?`)) {
-            const deletedCount = await clearCategory(category);
-            if (deletedCount > 0) {
-                alert(`${deletedCount} imagens removidas!`);
-            }
+    const handleClear = async (category: string) => {
+        if (confirm(`Limpar categoria ${getCategoryDisplayName(category)}?`)) {
+            await clearCategory(category);
         }
     };
 
     if (loading) {
         return (
-            <StatusCard title="Galeria de Treinamento">
+            <StatusCard title="Galeria">
                 <div className="flex items-center justify-center py-8">
-                    <RefreshCw className="animate-spin w-6 h-6 mr-2" />
-                    <span>Carregando imagens...</span>
+                    <RefreshCw className="animate-spin w-5 h-5 mr-2" />
+                    <span>Carregando...</span>
                 </div>
             </StatusCard>
         );
@@ -75,9 +65,9 @@ export const TrainingGallery: React.FC = () => {
 
     if (error) {
         return (
-            <StatusCard title="Galeria de Treinamento">
-                <div className="text-center py-8">
-                    <p className="text-red-600 mb-4">❌ {error}</p>
+            <StatusCard title="Galeria">
+                <div className="text-center py-6">
+                    <p className="text-red-600 mb-3">❌ {error}</p>
                     <Button onClick={refresh} variant="primary" size="sm">
                         Tentar Novamente
                     </Button>
@@ -87,48 +77,39 @@ export const TrainingGallery: React.FC = () => {
     }
 
     return (
-        <div className="space-y-6">
-            {/* Header com Estatísticas */}
-            <StatusCard title="Galeria de Imagens de Treinamento">
+        <>
+            <StatusCard title="Galeria de Treinamento">
+                {/* Stats */}
                 <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center space-x-4">
-                        <span className="text-sm font-medium">
-                            {stats?.total_images || 0} imagens • {stats?.completion_percentage.toFixed(1) || 0}% completo
-                        </span>
-                        <div className={`px-2 py-1 rounded text-xs font-medium ${
-                            stats?.training_complete ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                            {stats?.training_complete ? 'Treinamento Completo' : 'Treinamento Pendente'}
-                        </div>
-                    </div>
-                    
+                    <span className="text-sm">
+                        {stats?.total_images || 0} imagens • {stats?.completion_percentage?.toFixed(0) || 0}% completo
+                    </span>
                     <Button onClick={refresh} variant="secondary" size="sm" icon={<RefreshCw />}>
                         Atualizar
                     </Button>
                 </div>
 
-                {/* Filtros por Categoria */}
-                <div className="flex space-x-2 mb-6">
+                {/* Filtros */}
+                <div className="flex gap-2 mb-4">
                     <button
                         onClick={() => setSelectedCategory('all')}
-                        className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                        className={`px-3 py-1 rounded text-sm ${
                             selectedCategory === 'all'
                                 ? 'bg-blue-500 text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                : 'bg-gray-100 hover:bg-gray-200'
                         }`}
                     >
                         Todas ({images.length})
                     </button>
                     
-                    {/* Iteração sobre as categorias para criar os botões de filtro */}
                     {Object.entries(imagesByCategory).map(([category, categoryImages]) => (
                         <button
                             key={category}
                             onClick={() => setSelectedCategory(category)}
-                            className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                            className={`px-3 py-1 rounded text-sm ${
                                 selectedCategory === category
                                     ? 'bg-blue-500 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                    : 'bg-gray-100 hover:bg-gray-200'
                             }`}
                         >
                             {getCategoryDisplayName(category)} ({categoryImages.length})
@@ -136,111 +117,121 @@ export const TrainingGallery: React.FC = () => {
                     ))}
                 </div>
 
-                {/* Grid de Imagens */}
+                {/* Grid */}
                 {filteredImages.length > 0 ? (
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-8 gap-2">
                         {filteredImages.map((image) => (
                             <div
                                 key={`${image.category}-${image.filename}`}
-                                className="group relative bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow"
+                                className="group relative bg-gray-100 rounded overflow-hidden aspect-square"
                             >
                                 <img
-                                    src={image.url} // <-- Esta é a URL que não está carregando a imagem
+                                    src={`http://localhost:5000/api/training/image/${image.category}/${image.filename}`}
                                     alt={image.filename}
-                                    className="w-full h-24 object-cover"
-                                    onError={(e) => {
-                                        // Substitui a imagem por um SVG de erro se não carregar
-                                        (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBkPSJtOSA5IDMgM0wyMCA0SDRsNSA1IDMtM3oiLz48cGF0aCBkPSJtMTUgMTMtMy0zVjI0aDEwdi0yMGwtNCA0eiIvPjwvc3ZnPg==';
-                                    }}
+                                    className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
+                                    onClick={() => setViewImage(`http://localhost:5000/api/training/image/${image.category}/${image.filename}`)}
+                                    crossOrigin="anonymous"
+                                    loading="lazy"
                                 />
                                 
-                                {/* Badge da Categoria (rendeizado corretamente com base em image.category) */}
-                                <div className={`absolute top-1 left-1 px-2 py-1 rounded text-xs font-medium ${getCategoryColor(image.category)}`}>
-                                    {getCategoryDisplayName(image.category)}
+                                {/* Badge */}
+                                <div className={`absolute top-1 left-1 px-1 py-0.5 rounded text-xs ${getCategoryColor(image.category)}`}>
+                                    {getCategoryDisplayName(image.category).charAt(0)}
                                 </div>
                                 
-                                {/* Overlay de Ações */}
-                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center">
-                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity space-x-1">
-                                        <button
-                                            onClick={() => setSelectedImage(image.url)}
-                                            className="p-1 bg-white text-gray-700 rounded hover:bg-gray-100"
-                                            title="Visualizar"
-                                        >
-                                            <Eye className="w-4 h-4" />
-                                        </button>
-                                        
-                                        <a
-                                            href={image.url}
-                                            download={image.filename}
-                                            className="inline-block p-1 bg-white text-gray-700 rounded hover:bg-gray-100"
-                                            title="Download"
-                                        >
-                                            <Download className="w-4 h-4" />
-                                        </a>
-                                        
-                                        <button
-                                            onClick={() => handleDeleteImage(image.category, image.filename)}
-                                            className="p-1 bg-red-500 text-white rounded hover:bg-red-600"
-                                            title="Deletar"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                                
-                                {/* Info da Imagem */}
-                                <div className="p-2">
-                                    <p className="text-xs font-mono text-gray-600 truncate">
-                                        {image.filename}
-                                    </p>
-                                    <p className="text-xs text-gray-500">
-                                        {image.created_at_formatted}
-                                    </p>
+                                {/* Actions */}
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1 transition-opacity">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setViewImage(`http://localhost:5000/api/training/image/${image.category}/${image.filename}`);
+                                        }}
+                                        className="p-1 bg-white/20 rounded hover:bg-white/30"
+                                        title="Ver"
+                                    >
+                                        <Eye className="w-3 h-3 text-white" />
+                                    </button>
+                                    
+                                    <a
+                                        href={`http://localhost:5000/api/training/image/${image.category}/${image.filename}`}
+                                        download={image.filename}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="p-1 bg-white/20 rounded hover:bg-white/30"
+                                        title="Download"
+                                    >
+                                        <Download className="w-3 h-3 text-white" />
+                                    </a>
+                                    
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDelete(image.category, image.filename);
+                                        }}
+                                        className="p-1 bg-red-500/80 rounded hover:bg-red-600"
+                                        title="Deletar"
+                                    >
+                                        <Trash2 className="w-3 h-3 text-white" />
+                                    </button>
                                 </div>
                             </div>
                         ))}
                     </div>
                 ) : (
-                    <div className="text-center py-12 text-gray-500">
-                        <p>📷 Nenhuma imagem encontrada</p>
-                        <p className="text-sm mt-1">
-                            Use o sistema de treinamento para capturar imagens
-                        </p>
+                    <div className="text-center py-8 text-gray-500">
+                        <p>📷 Nenhuma imagem</p>
+                        <p className="text-sm">Use o treinamento para capturar</p>
                     </div>
                 )}
 
-                {/* Ações de Categoria */}
+                {/* Clear Category */}
                 {selectedCategory !== 'all' && filteredImages.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-200">
+                    <div className="mt-4 pt-4 border-t">
                         <Button
-                            onClick={() => handleClearCategory(selectedCategory)}
+                            onClick={() => handleClear(selectedCategory)}
                             variant="danger"
                             size="sm"
                             icon={<Trash2 />}
                         >
-                            Limpar Categoria "{getCategoryDisplayName(selectedCategory)}"
+                            Limpar "{getCategoryDisplayName(selectedCategory)}"
                         </Button>
                     </div>
                 )}
             </StatusCard>
 
-            {/* Modal de Visualização (para quando clica no ícone de olho) */}
-            {selectedImage && (
-                <div
-                    className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50"
-                    onClick={() => setSelectedImage(null)}
+            {/* Modal Simples */}
+            {viewImage && (
+                <div 
+                    className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+                    onClick={() => setViewImage(null)}
                 >
-                    <div className="max-w-4xl max-h-4xl p-4">
+                    <div className="relative max-w-4xl max-h-full">
+                        <button
+                            onClick={() => setViewImage(null)}
+                            className="absolute -top-10 right-0 text-white hover:text-gray-300"
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+                        
                         <img
-                            src={selectedImage}
+                            src={viewImage}
                             alt="Visualização"
                             className="max-w-full max-h-full object-contain rounded"
                             onClick={(e) => e.stopPropagation()}
                         />
+                        
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/50 p-2 rounded-b flex gap-2 justify-center">
+                            <a
+                                href={viewImage}
+                                download
+                                className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                Download
+                            </a>
+                        </div>
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 };
