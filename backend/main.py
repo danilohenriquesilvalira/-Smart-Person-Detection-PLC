@@ -1,6 +1,6 @@
 """
-🚀 Smart Detection System - Entry Point
-Sistema Modular de Detecção Inteligente com PLC e API
+🚀 Smart Detection System - Entry Point (COM HMI)
+Sistema Modular de Detecção Inteligente com PLC, API e HMI
 """
 import sys
 import time
@@ -13,10 +13,11 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 # Imports dos serviços
 from src.core.detector import smart_detector
 from src.api.app import api_app
+from src.services.hmi_service import hmi_service
 from config.settings import validate_config, ensure_directories, MESSAGES
 
 class SmartDetectionSystem:
-    """🎯 Sistema Principal de Detecção Inteligente"""
+    """🎯 Sistema Principal de Detecção Inteligente (COM HMI)"""
     
     def __init__(self):
         self.is_running = False
@@ -64,6 +65,13 @@ class SmartDetectionSystem:
         else:
             print("⚠️ Falha ao inicializar API REST - continuando sem API")
         
+        # 5. Inicializar HMI Service (NOVO)
+        if hmi_service.start_server():
+            print("✅ HMI Service inicializado")
+            self.services_started.append("hmi")
+        else:
+            print("⚠️ Falha ao inicializar HMI Service - continuando sem HMI")
+        
         print("🎉 Sistema inicializado com sucesso!")
         print(self._get_system_info())
         
@@ -82,6 +90,7 @@ class SmartDetectionSystem:
         print("\n" + "="*60)
         print("💡 CONTROLES DISPONÍVEIS:")
         print("   🌐 Dashboard Web: Controles via navegador")
+        print("   📺 HMI TP1500: Interface industrial otimizada")
         print("   🔌 PLC: Comandos via sistema industrial")
         print("   ⌨️  Teclado: ESC para sair")
         print("="*60)
@@ -119,6 +128,10 @@ class SmartDetectionSystem:
         self.is_running = False
         
         # Finalizar serviços na ordem inversa
+        if "hmi" in self.services_started:
+            hmi_service.stop_server()
+            print("🛑 HMI Service finalizado")
+        
         if "api" in self.services_started:
             api_app.stop_server()
             print("🛑 API REST finalizada")
@@ -143,6 +156,8 @@ class SmartDetectionSystem:
                 components.append("Camera")
             if status["running"]:
                 components.append("AI")
+            if "hmi" in self.services_started:
+                components.append("HMI")
             
             if components:
                 print(f"💓 Sistema ativo - Componentes: {', '.join(components)}")
@@ -152,16 +167,29 @@ class SmartDetectionSystem:
     
     def _get_system_info(self) -> str:
         """📋 Obter informações do sistema"""
+        hmi_status = "✅ Ativo" if "hmi" in self.services_started else "❌ Inativo"
+        
         info = [
             "\n📋 SISTEMA INICIALIZADO:",
             f"   🎯 Detector: {'✅ Ativo' if 'detector' in self.services_started else '❌ Inativo'}",
             f"   🌐 API REST: {'✅ Ativo' if 'api' in self.services_started else '❌ Inativo'}",
+            f"   📺 HMI Service: {hmi_status}",
             "",
             "🌐 ENDPOINTS DISPONÍVEIS:",
             "   📱 Dashboard: http://localhost:5173",
             "   📹 Video Stream: http://localhost:5000/video_feed", 
             "   🖼️ Training API: http://localhost:5000/api/training/images",
-            "   🌐 WebSocket: ws://localhost:8765",
+            "   🌐 WebSocket: ws://localhost:8765"
+        ]
+        
+        if "hmi" in self.services_started:
+            info.extend([
+                "",
+                "📺 HMI:",
+                "   📺 URL: http://localhost:8080"
+            ])
+        
+        info.extend([
             "",
             "🎯 FUNCIONALIDADES:",
             "   📷 Streaming de vídeo em tempo real",
@@ -169,8 +197,9 @@ class SmartDetectionSystem:
             "   📚 Sistema de treinamento adaptativo",
             "   🔌 Integração PLC industrial",
             "   📊 API REST para integração",
-            "   🌐 WebSocket para tempo real"
-        ]
+            "   🌐 WebSocket para tempo real",
+            "   📺 Interface HMI otimizada"
+        ])
         
         return "\n".join(info)
     
@@ -178,6 +207,7 @@ class SmartDetectionSystem:
         """📊 Obter status completo do sistema"""
         detector_status = smart_detector.get_system_status()
         api_status = api_app.is_running if hasattr(api_app, 'is_running') else False
+        hmi_status = hmi_service.get_status() if "hmi" in self.services_started else {"running": False}
         
         return {
             "running": self.is_running,
@@ -191,6 +221,7 @@ class SmartDetectionSystem:
                     "/video_feed"
                 ]
             },
+            "hmi": hmi_status,
             "uptime": time.time(),
             "system_info": self._get_system_info()
         }
