@@ -1,0 +1,12 @@
+{
+  "threshold": 0.5009981811046601,
+  "roi": [
+    232,
+    158,
+    319,
+    248
+  ],
+  "total_fotos": 15,
+  "sistema_treinado": true,
+  "timestamp": 1753364332.972315
+}
