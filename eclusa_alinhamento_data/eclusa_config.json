@@ -1,0 +1,24 @@
+{
+  "roi_caldeira": [
+    209,
+    182,
+    503,
+    331
+  ],
+  "linha_centro_ideal": [
+    356,
+    182,
+    356,
+    331
+  ],
+  "area_alinhamento": [
+    306,
+    182,
+    406,
+    331
+  ],
+  "tolerancia_angulo": 10,
+  "tolerancia_centro": 50,
+  "min_area_barco": 1000,
+  "timestamp": 1754911920.3305707
+}

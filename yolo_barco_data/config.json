@@ -1,0 +1,6 @@
+{
+  "confianca_min": 0.25999999999999945,
+  "iou_threshold": 0.9,
+  "modelo_yolo": "yolov8n.pt",
+  "timestamp": 1755011088.337589
+}
